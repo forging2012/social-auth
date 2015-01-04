@@ -17,7 +17,7 @@
 package apps
 
 import (
-	"github.com/beego/social-auth"
+	"github.com/go-tango/social-auth"
 )
 
 type Dropbox struct {

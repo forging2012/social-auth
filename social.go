@@ -23,8 +23,11 @@ import (
 	"strconv"
 
 	"github.com/astaxie/beego"
-	"github.com/astaxie/beego/context"
 	"github.com/astaxie/beego/utils"
+
+	"github.com/lunny/tango"
+	"github.com/go-xweb/httpsession"
+	"github.com/lunny/log"
 )
 
 const (
@@ -50,10 +53,11 @@ func (this *SocialAuth) getSessKey(social SocialType, key string) string {
 }
 
 // create oauth2 state string
-func (this *SocialAuth) createState(ctx *context.Context, social SocialType) string {
+func (this *SocialAuth) createState(ctx *tango.Context, session *httpsession.Session, 
+	social SocialType) string {
 	values := make(url.Values, 2)
 
-	if uid, ok := this.app.IsUserLogin(ctx); ok {
+	if uid, ok := this.app.IsUserLogin(ctx, session); ok {
 		// add uid if user current is login
 		values.Add("uid", strconv.FormatInt(int64(uid), 10))
 	}
@@ -66,15 +70,15 @@ func (this *SocialAuth) createState(ctx *context.Context, social SocialType) str
 
 	// save to session
 	name := this.getSessKey(social, "state")
-	ctx.Input.CruSession.Set(name, state)
+	session.Set(name, state)
 
 	return state
 }
 
 // verify oauth2 state string
-func (this *SocialAuth) verifyState(ctx *context.Context, social SocialType) (string, bool) {
-	code := ctx.Input.Query("code")
-	state := ctx.Input.Query("state")
+func (this *SocialAuth) verifyState(ctx *tango.Context, session *httpsession.Session, social SocialType) (string, bool) {
+	code := ctx.Req().FormValue("code")
+	state := ctx.Req().FormValue("state")
 
 	if len(code) == 0 || len(state) == 0 {
 		return "", false
@@ -82,7 +86,7 @@ func (this *SocialAuth) verifyState(ctx *context.Context, social SocialType) (st
 
 	name := this.getSessKey(social, "state")
 
-	vu, ok := ctx.Input.CruSession.Get(name).(string)
+	vu, ok := session.Get(name).(string)
 	if !ok || ok && state != vu {
 		return "", false
 	}
@@ -91,8 +95,8 @@ func (this *SocialAuth) verifyState(ctx *context.Context, social SocialType) (st
 }
 
 // Get provider according request path. ex: /login/: match /login/github
-func (this *SocialAuth) getProvider(ctx *context.Context) Provider {
-	path := ctx.Input.Param(":splat")
+func (this *SocialAuth) getProvider(ctx *tango.Context) Provider {
+	path := ctx.Params().Get(":splat")
 
 	p, ok := GetProviderByPath(path)
 	if ok {
@@ -103,10 +107,10 @@ func (this *SocialAuth) getProvider(ctx *context.Context) Provider {
 }
 
 // After OAuthAccess check saved token for ready connect
-func (this *SocialAuth) ReadyConnect(ctx *context.Context) (SocialType, bool) {
+func (this *SocialAuth) ReadyConnect(ctx *tango.Context, session *httpsession.Session) (SocialType, bool) {
 	var social SocialType
 
-	if s, _ := ctx.Input.CruSession.Get("social_connect").(int); s == 0 {
+	if s, _ := session.Get("social_connect").(int); s == 0 {
 		return 0, false
 	} else {
 		social = SocialType(s)
@@ -120,8 +124,8 @@ func (this *SocialAuth) ReadyConnect(ctx *context.Context) (SocialType, bool) {
 }
 
 // Redirect to other social platform
-func (this *SocialAuth) OAuthRedirect(ctx *context.Context) (redirect string, failedErr error) {
-	_, isLogin := this.app.IsUserLogin(ctx)
+func (this *SocialAuth) OAuthRedirect(ctx *tango.Context, session *httpsession.Session) (redirect string, failedErr error) {
+	_, isLogin := this.app.IsUserLogin(ctx, session)
 
 	defer func() {
 		if len(redirect) == 0 && failedErr != nil {
@@ -142,13 +146,13 @@ func (this *SocialAuth) OAuthRedirect(ctx *context.Context) (redirect string, fa
 	social := p.GetType()
 	config := p.GetConfig()
 	// create redirect url
-	redirect = config.AuthCodeURL(this.createState(ctx, social))
+	redirect = config.AuthCodeURL(this.createState(ctx, session, social))
 	return
 }
 
 // Callback from social platform
-func (this *SocialAuth) OAuthAccess(ctx *context.Context) (redirect string, userSocial *UserSocial, failedErr error) {
-	_, isLogin := this.app.IsUserLogin(ctx)
+func (this *SocialAuth) OAuthAccess(ctx *tango.Context, session *httpsession.Session) (redirect string, userSocial *UserSocial, failedErr error) {
+	_, isLogin := this.app.IsUserLogin(ctx, session)
 
 	defer func() {
 		if len(redirect) == 0 {
@@ -163,7 +167,7 @@ func (this *SocialAuth) OAuthAccess(ctx *context.Context) (redirect string, user
 	}()
 
 	// check if param has a error key
-	if err := ctx.Input.Query("error"); len(err) > 0 {
+	if err := ctx.Req().FormValue("error"); len(err) > 0 {
 		failedErr = fmt.Errorf(err)
 		return
 	}
@@ -180,7 +184,7 @@ func (this *SocialAuth) OAuthAccess(ctx *context.Context) (redirect string, user
 	var code string
 
 	// verify state string
-	if c, ok := this.verifyState(ctx, social); !ok {
+	if c, ok := this.verifyState(ctx, session, social); !ok {
 		failedErr = fmt.Errorf("state not verified")
 		return
 	} else {
@@ -206,15 +210,15 @@ func (this *SocialAuth) OAuthAccess(ctx *context.Context) (redirect string, user
 		if ok, err := p.CanConnect(tok, &uSocial); ok {
 			// save token to session, for connect
 			tk := SocialTokenField{tok}
-			ctx.Input.CruSession.Set(this.getSessKey(social, "token"), tk.RawValue())
-			ctx.Input.CruSession.Set("social_connect", int(social))
+			session.Set(this.getSessKey(social, "token"), tk.RawValue())
+			session.Set("social_connect", int(social))
 
 			redirect = this.ConnectRegisterURL
 
 		} else if err == nil {
 			if !isLogin {
 				// login user
-				redirect, failedErr = this.app.LoginUser(ctx, uSocial.Uid)
+				redirect, failedErr = this.app.LoginUser(ctx, session, uSocial.Uid)
 				if len(redirect) == 0 && failedErr == nil {
 					redirect = this.ConnectSuccessURL
 				}
@@ -236,45 +240,41 @@ func (this *SocialAuth) OAuthAccess(ctx *context.Context) (redirect string, user
 }
 
 // general use of redirect
-func (this *SocialAuth) handleRedirect(ctx *context.Context) {
-	redirect, err := this.OAuthRedirect(ctx)
+func (this *SocialAuth) handleRedirect(ctx *tango.Context, session *httpsession.Session) {
+	redirect, err := this.OAuthRedirect(ctx, session)
 	if err != nil {
 		beego.Error("SocialAuth.handleRedirect", err)
 	}
 
 	if len(redirect) > 0 {
-		ctx.Redirect(302, redirect)
+		ctx.Redirect(redirect)
 	}
 }
 
 // general use of redirect callback
-func (this *SocialAuth) handleAccess(ctx *context.Context) {
-	redirect, _, err := this.OAuthAccess(ctx)
+func (this *SocialAuth) handleAccess(ctx *tango.Context, session *httpsession.Session) {
+	redirect, _, err := this.OAuthAccess(ctx, session)
 	if err != nil {
-		beego.Error("SocialAuth.handleAccess", err)
+		log.Error("SocialAuth.handleAccess", err)
 	}
 
 	if len(redirect) > 0 {
-		ctx.Redirect(302, redirect)
+		ctx.Redirect(redirect)
 	}
 }
 
 // save user social info and login the user
-func (this *SocialAuth) ConnectAndLogin(ctx *context.Context, socialType SocialType, uid int) (string, *UserSocial, error) {
+func (this *SocialAuth) ConnectAndLogin(ctx *tango.Context, session *httpsession.Session, socialType SocialType, uid int) (string, *UserSocial, error) {
 	tokKey := this.getSessKey(socialType, "token")
 
 	defer func() {
 		// delete connect tok in session
-		if ctx.Input.CruSession.Get("social_connect") != nil {
-			ctx.Input.CruSession.Delete("social_connect")
-		}
-		if ctx.Input.CruSession.Get(tokKey) != nil {
-			ctx.Input.CruSession.Delete(tokKey)
-		}
+		session.Del("social_connect")
+		session.Del(tokKey)
 	}()
 
 	tk := SocialTokenField{}
-	value := ctx.Input.CruSession.Get(tokKey)
+	value := session.Get(tokKey)
 	if err := tk.SetRaw(value); err != nil {
 		return "", nil, err
 	}
@@ -304,7 +304,7 @@ func (this *SocialAuth) ConnectAndLogin(ctx *context.Context, socialType SocialT
 	}
 
 	// login user
-	loginRedirect, err := this.app.LoginUser(ctx, uid)
+	loginRedirect, err := this.app.LoginUser(ctx, session, uid)
 	return loginRedirect, &userSocial, nil
 }
 
@@ -335,8 +335,8 @@ func NewSocial(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
 func NewWithFilter(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
 	social := NewSocial(urlPrefix, socialAuther)
 
-	beego.InsertFilter(social.URLPrefix+"*/access", beego.BeforeRouter, social.handleAccess)
-	beego.InsertFilter(social.URLPrefix+"*", beego.BeforeRouter, social.handleRedirect)
+	//beego.InsertFilter(social.URLPrefix+"*/access", beego.BeforeRouter, social.handleAccess)
+	//beego.InsertFilter(social.URLPrefix+"*", beego.BeforeRouter, social.handleRedirect)
 
 	return social
 }

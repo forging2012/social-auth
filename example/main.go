@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 
 	"github.com/astaxie/beego"
-	"github.com/astaxie/beego/context"
+	"github.com/lunny/tango"
 	"github.com/astaxie/beego/orm"
 
 	"github.com/beego/social-auth"
@@ -32,27 +32,27 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-func IsUserLogin(ctx *context.Context) (int, bool) {
-	if id, ok := ctx.Input.CruSession.Get("login_user").(int); ok && id == 1 {
+func IsUserLogin(session *httpsession.Session) (int, bool) {
+	if id, ok := session.Get("login_user").(int); ok && id == 1 {
 		return id, true
 	}
 	return 0, false
 }
 
-func Logout(ctx *context.Context) {
-	ctx.Input.CruSession.Delete("login_user")
+func Logout(session *httpsession.Session) {
+	session.Del("login_user")
 	types := social.GetAllTypes()
 	for _, t := range types {
-		ctx.Input.CruSession.Delete(t.NameLower())
+		session.Del(t.NameLower())
 	}
 }
 
-func SetInfoToSession(ctx *context.Context, userSocial *social.UserSocial) {
-	ctx.Input.CruSession.Set(userSocial.Type.NameLower(),
+func SetInfoToSession(session *httpsession.Session, userSocial *social.UserSocial) {
+	session.Set(userSocial.Type.NameLower(),
 		fmt.Sprintf("Identify: %s, AccessToken: %s", userSocial.Identify, userSocial.Data.AccessToken))
 }
 
-func HandleRedirect(ctx *context.Context) {
+func HandleRedirect(ctx *tango.Context) {
 	redirect, err := SocialAuth.OAuthRedirect(ctx)
 	if err != nil {
 		beego.Error("SocialAuth.handleRedirect", err)
@@ -63,7 +63,7 @@ func HandleRedirect(ctx *context.Context) {
 	}
 }
 
-func HandleAccess(ctx *context.Context) {
+func HandleAccess(ctx *tango.Context) {
 	redirect, userSocial, err := SocialAuth.OAuthAccess(ctx)
 	if err != nil {
 		beego.Error("SocialAuth.handleAccess", err)

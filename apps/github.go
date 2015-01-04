@@ -22,7 +22,7 @@ import (
 
 	"github.com/astaxie/beego/httplib"
 
-	"github.com/beego/social-auth"
+	"github.com/go-tango/social-auth"
 )
 
 type Github struct {

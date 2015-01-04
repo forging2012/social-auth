@@ -17,7 +17,8 @@
 package social
 
 import (
-	"github.com/astaxie/beego/context"
+	"github.com/lunny/tango"
+	"github.com/go-xweb/httpsession"
 )
 
 // Interface of social Privider
@@ -32,6 +33,6 @@ type Provider interface {
 
 // Interface of social utils
 type SocialAuther interface {
-	IsUserLogin(*context.Context) (int, bool)
-	LoginUser(*context.Context, int) (string, error)
+	IsUserLogin(*tango.Context, *httpsession.Session) (int, bool)
+	LoginUser(*tango.Context, *httpsession.Session, int) (string, error)
 }
