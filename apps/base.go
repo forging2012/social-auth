@@ -19,8 +19,6 @@ package apps
 import (
 	"encoding/base64"
 
-	"github.com/astaxie/beego/orm"
-
 	"github.com/go-tango/social-auth"
 )
 
@@ -59,11 +57,13 @@ func (p *BaseProvider) CanConnect(tok *social.Token, userSocial *social.UserSoci
 		return false, err
 	}
 
-	if err := social.UserSocials().Filter("Identify", identify).Filter("Type", p.App.GetType()).One(userSocial); err == orm.ErrNoRows {
-		return true, nil
-	} else if err == nil {
-		return false, nil
-	} else {
+	has, err := social.ORM().Where("identify = ?", identify).And("type = ?", p.App.GetType()).Get(userSocial)
+	if err != nil {
 		return false, err
 	}
+	if !has {
+		return true, nil
+	}
+
+	return false, nil
 }

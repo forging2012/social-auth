@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/astaxie/beego/orm"
+	"github.com/go-xorm/xorm"
 )
 
 const (
@@ -35,7 +35,18 @@ const (
 	endType
 )
 
-var types []SocialType
+var (
+	types []SocialType
+	orm   *xorm.Engine
+)
+
+func SetORM(o *xorm.Engine) {
+	orm = o
+}
+
+func ORM() *xorm.Engine {
+	return orm
+}
 
 func GetAllTypes() []SocialType {
 	if types == nil {
@@ -76,9 +87,10 @@ func (e *SocialTokenField) String() string {
 	return string(data)
 }
 
+/*
 func (e *SocialTokenField) FieldType() int {
 	return orm.TypeTextField
-}
+}*/
 
 func (e *SocialTokenField) SetRaw(value interface{}) error {
 	switch d := value.(type) {
@@ -95,19 +107,18 @@ func (e *SocialTokenField) RawValue() interface{} {
 }
 
 type UserSocial struct {
-	Id       int
-	Uid      int              `orm:"index"`
-	Identify string           `orm:"size(200)"`
-	Type     SocialType       `orm:"index"`
-	Data     SocialTokenField ``
+	Id       int64
+	Uid      int        `xorm:"index"`
+	Identify string     `xorm:"varchar(200)"`
+	Type     SocialType `xorm:"index"`
+	Data     SocialTokenField
 }
 
 func (e *UserSocial) Save() (err error) {
-	o := orm.NewOrm()
 	if e.Id == 0 {
-		_, err = o.Insert(e)
+		_, err = orm.Insert(e)
 	} else {
-		_, err = o.Update(e)
+		_, err = orm.Id(e.Id).Update(e)
 	}
 	return
 }
@@ -147,7 +158,7 @@ func (e *UserSocial) PutToken(token *Token) error {
 	}
 
 	if changed && e.Id > 0 {
-		_, err := orm.NewOrm().Update(e, "Data")
+		_, err := orm.Id(e.Id).Cols("data").Update(e)
 		return err
 	}
 
@@ -160,41 +171,49 @@ func (e *UserSocial) TableUnique() [][]string {
 	}
 }
 func (e *UserSocial) Insert() error {
-	if _, err := orm.NewOrm().Insert(e); err != nil {
-		return err
-	}
-	return nil
+	_, err := orm.Insert(e)
+	return err
 }
 
+/*
 func (e *UserSocial) Read(fields ...string) error {
 	if err := orm.NewOrm().Read(e, fields...); err != nil {
 		return err
 	}
 	return nil
+}*/
+
+func Obj2Table(objs []string) []string {
+	var res = make([]string, len(objs))
+	for i, c := range objs {
+		res[i] = orm.ColumnMapper.Obj2Table(c)
+	}
+	return res
 }
 
 func (e *UserSocial) Update(fields ...string) error {
-	if _, err := orm.NewOrm().Update(e, fields...); err != nil {
+	if _, err := orm.Id(e.Id).Cols(Obj2Table(fields)...).Update(e); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (e *UserSocial) Delete() error {
-	if _, err := orm.NewOrm().Delete(e); err != nil {
+	if _, err := orm.Id(e.Id).Delete(new(UserSocial)); err != nil {
 		return err
 	}
 	return nil
 }
 
+/*
 func UserSocials() orm.QuerySeter {
 	return orm.NewOrm().QueryTable("user_social")
-}
+}*/
 
 // Get UserSocials by uid
 func GetSocialsByUid(uid int, socialTypes ...SocialType) ([]*UserSocial, error) {
 	var userSocials []*UserSocial
-	_, err := UserSocials().Filter("Uid", uid).Filter("Type__in", socialTypes).All(&userSocials)
+	err := orm.Where("uid = ?", uid).In("type", socialTypes).Find(&userSocials)
 	if err != nil {
 		return nil, err
 	}
@@ -202,5 +221,5 @@ func GetSocialsByUid(uid int, socialTypes ...SocialType) ([]*UserSocial, error) 
 }
 
 func init() {
-	orm.RegisterModel(new(UserSocial))
+	//orm.RegisterModel(new(UserSocial))
 }
