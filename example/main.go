@@ -21,15 +21,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/astaxie/beego"
-	"github.com/lunny/tango"
-	"github.com/astaxie/beego/orm"
+	"code.google.com/p/go.net/context"
 
-	"github.com/beego/social-auth"
+	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/orm"
+	"github.com/lunny/tango"
+
 	"github.com/beego/social-auth/apps"
 
 	// just use mysql driver for example
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-tango/social-auth"
+	"github.com/go-xweb/httpsession"
 )
 
 func IsUserLogin(session *httpsession.Session) (int, bool) {
@@ -55,7 +58,7 @@ func SetInfoToSession(session *httpsession.Session, userSocial *social.UserSocia
 func HandleRedirect(ctx *tango.Context) {
 	redirect, err := SocialAuth.OAuthRedirect(ctx)
 	if err != nil {
-		beego.Error("SocialAuth.handleRedirect", err)
+		ctx.Logger.Error("SocialAuth.handleRedirect", err)
 	}
 
 	if len(redirect) > 0 {
@@ -66,7 +69,7 @@ func HandleRedirect(ctx *tango.Context) {
 func HandleAccess(ctx *tango.Context) {
 	redirect, userSocial, err := SocialAuth.OAuthAccess(ctx)
 	if err != nil {
-		beego.Error("SocialAuth.handleAccess", err)
+		ctx.Logger.Error("SocialAuth.handleAccess", err)
 	}
 
 	if userSocial != nil {
@@ -79,7 +82,7 @@ func HandleAccess(ctx *tango.Context) {
 }
 
 type MainRouter struct {
-	beego.Controller
+	tango.Ctx
 }
 
 func (this *MainRouter) Home() {
@@ -215,8 +218,9 @@ func initialize() {
 
 	// global create a SocialAuth and auto set filter
 	SocialAuth = social.NewSocial("/login/", new(socialAuther))
-	beego.InsertFilter("/login/*/access", beego.BeforeRouter, HandleAccess)
-	beego.InsertFilter("/login/*", beego.BeforeRouter, HandleRedirect)
+	// TODO: use tango middleware
+	//beego.InsertFilter("/login/*/access", beego.BeforeRouter, HandleAccess)
+	//beego.InsertFilter("/login/*", beego.BeforeRouter, HandleRedirect)
 
 	// set the DefaultTransport of social-auth
 	//

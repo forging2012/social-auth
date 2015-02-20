@@ -22,12 +22,11 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/astaxie/beego"
 	"github.com/astaxie/beego/utils"
 
-	"github.com/lunny/tango"
 	"github.com/go-xweb/httpsession"
 	"github.com/lunny/log"
+	"github.com/lunny/tango"
 )
 
 const (
@@ -53,7 +52,7 @@ func (this *SocialAuth) getSessKey(social SocialType, key string) string {
 }
 
 // create oauth2 state string
-func (this *SocialAuth) createState(ctx *tango.Context, session *httpsession.Session, 
+func (this *SocialAuth) createState(ctx *tango.Context, session *httpsession.Session,
 	social SocialType) string {
 	values := make(url.Values, 2)
 
@@ -243,7 +242,7 @@ func (this *SocialAuth) OAuthAccess(ctx *tango.Context, session *httpsession.Ses
 func (this *SocialAuth) handleRedirect(ctx *tango.Context, session *httpsession.Session) {
 	redirect, err := this.OAuthRedirect(ctx, session)
 	if err != nil {
-		beego.Error("SocialAuth.handleRedirect", err)
+		log.Error("SocialAuth.handleRedirect", err)
 	}
 
 	if len(redirect) > 0 {
@@ -335,6 +334,7 @@ func NewSocial(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
 func NewWithFilter(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
 	social := NewSocial(urlPrefix, socialAuther)
 
+	// TODO: use tango middlware instead beego filter
 	//beego.InsertFilter(social.URLPrefix+"*/access", beego.BeforeRouter, social.handleAccess)
 	//beego.InsertFilter(social.URLPrefix+"*", beego.BeforeRouter, social.handleRedirect)
 
