@@ -18,7 +18,7 @@ package social
 
 import (
 	"github.com/lunny/tango"
-	"github.com/go-xweb/httpsession"
+	"github.com/tango-contrib/session"
 )
 
 // Interface of social Privider
@@ -33,6 +33,6 @@ type Provider interface {
 
 // Interface of social utils
 type SocialAuther interface {
-	IsUserLogin(*tango.Context, *httpsession.Session) (int, bool)
-	LoginUser(*tango.Context, *httpsession.Session, int) (string, error)
+	IsUserLogin(*tango.Context, *session.Session) (int, bool)
+	LoginUser(*tango.Context, *session.Session, int) (string, error)
 }

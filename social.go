@@ -24,9 +24,9 @@ import (
 
 	"github.com/astaxie/beego/utils"
 
-	"github.com/go-xweb/httpsession"
 	"github.com/lunny/log"
 	"github.com/lunny/tango"
+	"github.com/tango-contrib/session"
 )
 
 const (
@@ -52,7 +52,7 @@ func (this *SocialAuth) getSessKey(social SocialType, key string) string {
 }
 
 // create oauth2 state string
-func (this *SocialAuth) createState(ctx *tango.Context, session *httpsession.Session,
+func (this *SocialAuth) createState(ctx *tango.Context, session *session.Session,
 	social SocialType) string {
 	values := make(url.Values, 2)
 
@@ -75,7 +75,7 @@ func (this *SocialAuth) createState(ctx *tango.Context, session *httpsession.Ses
 }
 
 // verify oauth2 state string
-func (this *SocialAuth) verifyState(ctx *tango.Context, session *httpsession.Session, social SocialType) (string, bool) {
+func (this *SocialAuth) verifyState(ctx *tango.Context, session *session.Session, social SocialType) (string, bool) {
 	code := ctx.Req().FormValue("code")
 	state := ctx.Req().FormValue("state")
 
@@ -106,7 +106,7 @@ func (this *SocialAuth) getProvider(ctx *tango.Context) Provider {
 }
 
 // After OAuthAccess check saved token for ready connect
-func (this *SocialAuth) ReadyConnect(ctx *tango.Context, session *httpsession.Session) (SocialType, bool) {
+func (this *SocialAuth) ReadyConnect(ctx *tango.Context, session *session.Session) (SocialType, bool) {
 	var social SocialType
 
 	if s, _ := session.Get("social_connect").(int); s == 0 {
@@ -123,7 +123,7 @@ func (this *SocialAuth) ReadyConnect(ctx *tango.Context, session *httpsession.Se
 }
 
 // Redirect to other social platform
-func (this *SocialAuth) OAuthRedirect(ctx *tango.Context, session *httpsession.Session) (redirect string, failedErr error) {
+func (this *SocialAuth) OAuthRedirect(ctx *tango.Context, session *session.Session) (redirect string, failedErr error) {
 	_, isLogin := this.app.IsUserLogin(ctx, session)
 
 	defer func() {
@@ -150,7 +150,7 @@ func (this *SocialAuth) OAuthRedirect(ctx *tango.Context, session *httpsession.S
 }
 
 // Callback from social platform
-func (this *SocialAuth) OAuthAccess(ctx *tango.Context, session *httpsession.Session) (redirect string, userSocial *UserSocial, failedErr error) {
+func (this *SocialAuth) OAuthAccess(ctx *tango.Context, session *session.Session) (redirect string, userSocial *UserSocial, failedErr error) {
 	_, isLogin := this.app.IsUserLogin(ctx, session)
 
 	defer func() {
@@ -239,7 +239,7 @@ func (this *SocialAuth) OAuthAccess(ctx *tango.Context, session *httpsession.Ses
 }
 
 // general use of redirect
-func (this *SocialAuth) handleRedirect(ctx *tango.Context, session *httpsession.Session) {
+func (this *SocialAuth) handleRedirect(ctx *tango.Context, session *session.Session) {
 	redirect, err := this.OAuthRedirect(ctx, session)
 	if err != nil {
 		log.Error("SocialAuth.handleRedirect", err)
@@ -251,7 +251,7 @@ func (this *SocialAuth) handleRedirect(ctx *tango.Context, session *httpsession.
 }
 
 // general use of redirect callback
-func (this *SocialAuth) handleAccess(ctx *tango.Context, session *httpsession.Session) {
+func (this *SocialAuth) handleAccess(ctx *tango.Context, session *session.Session) {
 	redirect, _, err := this.OAuthAccess(ctx, session)
 	if err != nil {
 		log.Error("SocialAuth.handleAccess", err)
@@ -263,7 +263,7 @@ func (this *SocialAuth) handleAccess(ctx *tango.Context, session *httpsession.Se
 }
 
 // save user social info and login the user
-func (this *SocialAuth) ConnectAndLogin(ctx *tango.Context, session *httpsession.Session, socialType SocialType, uid int) (string, *UserSocial, error) {
+func (this *SocialAuth) ConnectAndLogin(ctx *tango.Context, session *session.Session, socialType SocialType, uid int) (string, *UserSocial, error) {
 	tokKey := this.getSessKey(socialType, "token")
 
 	defer func() {

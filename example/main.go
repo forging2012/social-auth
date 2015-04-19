@@ -18,8 +18,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"code.google.com/p/go.net/context"
 
@@ -27,22 +25,24 @@ import (
 	"github.com/astaxie/beego/orm"
 	"github.com/lunny/tango"
 
-	"github.com/beego/social-auth/apps"
+	"github.com/go-tango/social-auth/apps"
 
 	// just use mysql driver for example
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-tango/social-auth"
-	"github.com/go-xweb/httpsession"
+	"github.com/tango-contrib/events"
+	"github.com/tango-contrib/renders"
+	"github.com/tango-contrib/session"
 )
 
-func IsUserLogin(session *httpsession.Session) (int, bool) {
+func IsUserLogin(session *session.Session) (int, bool) {
 	if id, ok := session.Get("login_user").(int); ok && id == 1 {
 		return id, true
 	}
 	return 0, false
 }
 
-func Logout(session *httpsession.Session) {
+func Logout(session *session.Session) {
 	session.Del("login_user")
 	types := social.GetAllTypes()
 	for _, t := range types {
@@ -50,39 +50,70 @@ func Logout(session *httpsession.Session) {
 	}
 }
 
-func SetInfoToSession(session *httpsession.Session, userSocial *social.UserSocial) {
+func SetInfoToSession(session *session.Session, userSocial *social.UserSocial) {
 	session.Set(userSocial.Type.NameLower(),
 		fmt.Sprintf("Identify: %s, AccessToken: %s", userSocial.Identify, userSocial.Data.AccessToken))
 }
 
-func HandleRedirect(ctx *tango.Context) {
-	redirect, err := SocialAuth.OAuthRedirect(ctx)
-	if err != nil {
-		ctx.Logger.Error("SocialAuth.handleRedirect", err)
-	}
+func HandleRedirect(sess *session.Sessions) tango.HandlerFunc {
+	return func(ctx *tango.Context) {
+		session := sess.Session(ctx.Req(), ctx)
+		redirect, err := SocialAuth.OAuthRedirect(ctx, session)
+		if err != nil {
+			ctx.Logger.Error("SocialAuth.handleRedirect", err)
+		}
 
-	if len(redirect) > 0 {
-		ctx.Redirect(302, redirect)
+		if len(redirect) > 0 {
+			ctx.Redirect(redirect, 302)
+		} else {
+			ctx.Next()
+		}
 	}
 }
 
-func HandleAccess(ctx *tango.Context) {
-	redirect, userSocial, err := SocialAuth.OAuthAccess(ctx)
-	if err != nil {
-		ctx.Logger.Error("SocialAuth.handleAccess", err)
-	}
+func HandleAccess(sess *session.Sessions) tango.HandlerFunc {
+	return func(ctx *tango.Context) {
+		session := sess.Session(ctx.Req(), ctx)
+		redirect, userSocial, err := SocialAuth.OAuthAccess(ctx, session)
+		if err != nil {
+			ctx.Logger.Error("SocialAuth.handleAccess", err)
+		}
 
-	if userSocial != nil {
-		SetInfoToSession(ctx, userSocial)
-	}
+		if userSocial != nil {
+			SetInfoToSession(session, userSocial)
+		}
 
-	if len(redirect) > 0 {
-		ctx.Redirect(302, redirect)
+		if len(redirect) > 0 {
+			ctx.Redirect(redirect, 302)
+		} else {
+			ctx.Next()
+		}
 	}
 }
 
 type MainRouter struct {
 	tango.Ctx
+	renders.Renderer
+	session.Session
+	Data     renders.T
+	TplNames string
+}
+
+func (this *MainRouter) Before() {
+	this.Data = make(renders.T)
+}
+
+func (this *MainRouter) After() {
+	if !this.Written() && this.TplNames != "" {
+		err := this.Render(this.TplNames, this.Data)
+		if err != nil {
+			this.Result = err
+		}
+	}
+}
+
+func (this *MainRouter) GetString(key string) string {
+	return this.Req().FormValue(key)
 }
 
 func (this *MainRouter) Home() {
@@ -92,11 +123,11 @@ func (this *MainRouter) Home() {
 func (this *MainRouter) Login() {
 	this.TplNames = "index.tpl"
 
-	_, isLogin := IsUserLogin(this.Ctx)
+	_, isLogin := IsUserLogin(&this.Session)
 
 	switch this.GetString("flag") {
 	case "logout":
-		Logout(this.Ctx)
+		Logout(&this.Session)
 		this.Redirect("/login", 302)
 		return
 	case "connect_success":
@@ -218,9 +249,6 @@ func initialize() {
 
 	// global create a SocialAuth and auto set filter
 	SocialAuth = social.NewSocial("/login/", new(socialAuther))
-	// TODO: use tango middleware
-	//beego.InsertFilter("/login/*/access", beego.BeforeRouter, HandleAccess)
-	//beego.InsertFilter("/login/*", beego.BeforeRouter, HandleRedirect)
 
 	// set the DefaultTransport of social-auth
 	//
@@ -236,18 +264,19 @@ func initialize() {
 func main() {
 	initialize()
 
-	// must enable session engine, default use memory as engine
-	beego.SessionOn = true
-	beego.SessionProvider = "file"
-	beego.SessionSavePath = filepath.Join(os.TempDir(), "social_auth_sess")
-
-	beego.InsertFilter("*", beego.BeforeRouter, func(ctx *context.Context) {
-		beego.Info(ctx.Request.Method, ctx.Request.RequestURI)
-	})
-
+	t := tango.Classic()
+	// /login/*/access
+	// /login/*
+	sess := session.New()
+	t.Use(sess,
+		HandleAccess(sess),
+		HandleRedirect(),
+		renders.New(),
+		events.Events(),
+	)
 	mainR := new(MainRouter)
-	beego.Router("/", mainR, "get:Home")
-	beego.Router("/login", mainR, "get:Login")
-	beego.Router("/register/connect", mainR, "get:Connect")
-	beego.Run()
+	t.Route("GET:Home", "/", mainR)
+	t.Route("GET:Login", "/login", mainR)
+	t.Route("GET:Connect", "/register/connect", mainR)
+	t.Run()
 }
