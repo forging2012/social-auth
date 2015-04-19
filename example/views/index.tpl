@@ -2,7 +2,7 @@
 
 <html>
   	<head>
-    	<title>Beego</title>
+    	<title>OAuth</title>
     	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 	
 		<style type="text/css">
@@ -68,10 +68,10 @@
 			<div class="container">
 			<div class="row">
 			  <div class="hero-text">
-			    <h1>Welcome to Beego social auth</h1>
+			    <h1>Welcome to social auth</h1>
 			    <div class="box">
 				    <p class="description">
-				    	Beego social auth is a project use for connect social account with OAuth2.
+				    	Social auth is a project use for connect social account with OAuth2.
 				    <br />
 				    	Click the link below to test social auth
 				    </p>

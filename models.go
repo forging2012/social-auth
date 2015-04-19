@@ -87,31 +87,20 @@ func (e *SocialTokenField) String() string {
 	return string(data)
 }
 
-/*
-func (e *SocialTokenField) FieldType() int {
-	return orm.TypeTextField
-}*/
-
-func (e *SocialTokenField) SetRaw(value interface{}) error {
-	switch d := value.(type) {
-	case string:
-		return json.Unmarshal([]byte(d), e)
-	default:
-		return fmt.Errorf("<SocialTokenField.SetRaw> unknown value `%v`", value)
-	}
-	return nil
+func (e *SocialTokenField) FromDB(data []byte) error {
+	return json.Unmarshal(data, e)
 }
 
-func (e *SocialTokenField) RawValue() interface{} {
-	return e.String()
+func (e *SocialTokenField) ToDB() ([]byte, error) {
+	return json.Marshal(e)
 }
 
 type UserSocial struct {
 	Id       int64
-	Uid      int        `xorm:"index"`
-	Identify string     `xorm:"varchar(200)"`
-	Type     SocialType `xorm:"index"`
-	Data     SocialTokenField
+	Uid      int              `xorm:"index"`
+	Identify string           `xorm:"varchar(200)"`
+	Type     SocialType       `xorm:"index"`
+	Data     SocialTokenField `xorm:"text"`
 }
 
 func (e *UserSocial) Save() (err error) {

@@ -1,4 +1,5 @@
 // Copyright 2014 beego authors
+// Copyright 2015 tango authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"): you may
 // not use this file except in compliance with the License. You may obtain
@@ -19,20 +20,18 @@ package main
 import (
 	"fmt"
 
-	"code.google.com/p/go.net/context"
-
-	"github.com/astaxie/beego"
-	"github.com/astaxie/beego/orm"
+	"github.com/go-xorm/xorm"
+	"github.com/lunny/config"
+	"github.com/lunny/log"
 	"github.com/lunny/tango"
-
-	"github.com/go-tango/social-auth/apps"
-
-	// just use mysql driver for example
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/go-tango/social-auth"
 	"github.com/tango-contrib/events"
 	"github.com/tango-contrib/renders"
 	"github.com/tango-contrib/session"
+
+	"github.com/go-tango/social-auth"
+	"github.com/go-tango/social-auth/apps"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func IsUserLogin(session *session.Session) (int, bool) {
@@ -55,39 +54,39 @@ func SetInfoToSession(session *session.Session, userSocial *social.UserSocial) {
 		fmt.Sprintf("Identify: %s, AccessToken: %s", userSocial.Identify, userSocial.Data.AccessToken))
 }
 
-func HandleRedirect(sess *session.Sessions) tango.HandlerFunc {
-	return func(ctx *tango.Context) {
-		session := sess.Session(ctx.Req(), ctx)
-		redirect, err := SocialAuth.OAuthRedirect(ctx, session)
-		if err != nil {
-			ctx.Logger.Error("SocialAuth.handleRedirect", err)
-		}
+type HandleRedirect struct {
+	session.Session
+	tango.Ctx
+}
 
-		if len(redirect) > 0 {
-			ctx.Redirect(redirect, 302)
-		} else {
-			ctx.Next()
-		}
+func (h *HandleRedirect) Get() {
+	redirect, err := SocialAuth.OAuthRedirect(h.Context, &h.Session)
+	if err != nil {
+		h.Error("SocialAuth.handleRedirect", err)
+	}
+
+	if len(redirect) > 0 {
+		h.Redirect(redirect, 302)
 	}
 }
 
-func HandleAccess(sess *session.Sessions) tango.HandlerFunc {
-	return func(ctx *tango.Context) {
-		session := sess.Session(ctx.Req(), ctx)
-		redirect, userSocial, err := SocialAuth.OAuthAccess(ctx, session)
-		if err != nil {
-			ctx.Logger.Error("SocialAuth.handleAccess", err)
-		}
+type HandleAccess struct {
+	session.Session
+	tango.Ctx
+}
 
-		if userSocial != nil {
-			SetInfoToSession(session, userSocial)
-		}
+func (h *HandleAccess) Get() {
+	redirect, userSocial, err := SocialAuth.OAuthAccess(h.Context, &h.Session)
+	if err != nil {
+		h.Error("SocialAuth.handleAccess", err)
+	}
 
-		if len(redirect) > 0 {
-			ctx.Redirect(redirect, 302)
-		} else {
-			ctx.Next()
-		}
+	if userSocial != nil {
+		SetInfoToSession(&h.Session, userSocial)
+	}
+
+	if len(redirect) > 0 {
+		h.Redirect(redirect, 302)
 	}
 }
 
@@ -141,14 +140,14 @@ func (this *MainRouter) Login() {
 	this.Data["Types"] = types
 
 	for _, t := range types {
-		this.Data[t.NameLower()] = this.GetSession(t.NameLower())
+		this.Data[t.NameLower()] = this.Session.Get(t.NameLower())
 	}
 }
 
 func (this *MainRouter) Connect() {
 	this.TplNames = "index.tpl"
 
-	st, ok := SocialAuth.ReadyConnect(this.Ctx)
+	st, ok := SocialAuth.ReadyConnect(this.Context, &this.Session)
 	if !ok {
 		this.Redirect("/login", 302)
 		return
@@ -156,12 +155,12 @@ func (this *MainRouter) Connect() {
 
 	// Your app need custom connect behavior
 	// example just direct connect and login
-	loginRedirect, userSocial, err := SocialAuth.ConnectAndLogin(this.Ctx, st, 1)
+	loginRedirect, userSocial, err := SocialAuth.ConnectAndLogin(this.Context, &this.Session, st, 1)
 	if err != nil {
 		// may be has error
-		beego.Error(err)
+		log.Error(err)
 	} else {
-		SetInfoToSession(this.Ctx, userSocial)
+		SetInfoToSession(&this.Session, userSocial)
 	}
 
 	this.Redirect(loginRedirect, 302)
@@ -170,14 +169,14 @@ func (this *MainRouter) Connect() {
 type socialAuther struct {
 }
 
-func (p *socialAuther) IsUserLogin(ctx *context.Context) (int, bool) {
-	return IsUserLogin(ctx)
+func (p *socialAuther) IsUserLogin(ctx *tango.Context, session *session.Session) (int, bool) {
+	return IsUserLogin(session)
 }
 
-func (p *socialAuther) LoginUser(ctx *context.Context, uid int) (string, error) {
+func (p *socialAuther) LoginUser(ctx *tango.Context, session *session.Session, uid int) (string, error) {
 	// fake login the user
 	if uid == 1 {
-		ctx.Input.CruSession.Set("login_user", 1)
+		session.Set("login_user", 1)
 	}
 	return "/login", nil
 }
@@ -185,66 +184,68 @@ func (p *socialAuther) LoginUser(ctx *context.Context, uid int) (string, error) 
 var SocialAuth *social.SocialAuth
 
 func initialize() {
-	var err error
+	cfg, err := config.Load("./conf/app.conf")
+	if err != nil {
+		panic(err)
+	}
 
-	// setting beego orm
-	err = orm.RegisterDataBase("default", "mysql", beego.AppConfig.String("orm_source"))
+	orm, err := xorm.NewEngine("mysql", cfg.Get("orm_source"))
 	if err != nil {
-		beego.Error(err)
+		panic(err)
 	}
-	err = orm.RunSyncdb("default", false, false)
-	if err != nil {
-		beego.Error(err)
-	}
+
+	social.SetORM(orm)
 
 	// OAuth
 	var clientId, secret string
 
-	appURL := beego.AppConfig.String("social_auth_url")
+	appURL := cfg.Get("social_auth_url")
 	if len(appURL) > 0 {
 		social.DefaultAppUrl = appURL
 	}
 
-	clientId = beego.AppConfig.String("github_client_id")
-	secret = beego.AppConfig.String("github_client_secret")
+	clientId = cfg.Get("github_client_id")
+	secret = cfg.Get("github_client_secret")
 	err = social.RegisterProvider(apps.NewGithub(clientId, secret))
 	if err != nil {
-		beego.Error(err)
+		log.Error(err)
+	} else {
+		log.Info("registered github")
 	}
 
-	clientId = beego.AppConfig.String("google_client_id")
-	secret = beego.AppConfig.String("google_client_secret")
+	clientId = cfg.Get("google_client_id")
+	secret = cfg.Get("google_client_secret")
 	err = social.RegisterProvider(apps.NewGoogle(clientId, secret))
 	if err != nil {
-		beego.Error(err)
+		log.Error(err)
 	}
 
-	clientId = beego.AppConfig.String("weibo_client_id")
-	secret = beego.AppConfig.String("weibo_client_secret")
+	clientId = cfg.Get("weibo_client_id")
+	secret = cfg.Get("weibo_client_secret")
 	err = social.RegisterProvider(apps.NewWeibo(clientId, secret))
 	if err != nil {
-		beego.Error(err)
+		log.Error(err)
 	}
 
-	clientId = beego.AppConfig.String("qq_client_id")
-	secret = beego.AppConfig.String("qq_client_secret")
+	clientId = cfg.Get("qq_client_id")
+	secret = cfg.Get("qq_client_secret")
 	err = social.RegisterProvider(apps.NewQQ(clientId, secret))
 	if err != nil {
-		beego.Error(err)
+		log.Error(err)
 	}
 
-	clientId = beego.AppConfig.String("dropbox_client_id")
-	secret = beego.AppConfig.String("dropbox_client_secret")
+	clientId = cfg.Get("dropbox_client_id")
+	secret = cfg.Get("dropbox_client_secret")
 	err = social.RegisterProvider(apps.NewDropbox(clientId, secret))
 	if err != nil {
-		beego.Error(err)
+		log.Error(err)
 	}
 
-	clientId = beego.AppConfig.String("facebook_client_id")
-	secret = beego.AppConfig.String("facebook_client_secret")
+	clientId = cfg.Get("facebook_client_id")
+	secret = cfg.Get("facebook_client_secret")
 	err = social.RegisterProvider(apps.NewFacebook(clientId, secret))
 	if err != nil {
-		beego.Error(err)
+		log.Error(err)
 	}
 
 	// global create a SocialAuth and auto set filter
@@ -265,18 +266,20 @@ func main() {
 	initialize()
 
 	t := tango.Classic()
-	// /login/*/access
-	// /login/*
 	sess := session.New()
 	t.Use(sess,
-		HandleAccess(sess),
-		HandleRedirect(),
-		renders.New(),
+		renders.New(renders.Options{
+			Reload:     true,
+			Directory:  "./views",
+			Extensions: []string{".tpl"},
+		}),
 		events.Events(),
 	)
 	mainR := new(MainRouter)
 	t.Route("GET:Home", "/", mainR)
 	t.Route("GET:Login", "/login", mainR)
 	t.Route("GET:Connect", "/register/connect", mainR)
+	t.Get("/login/:splat", new(HandleRedirect))
+	t.Get("/login/:splat/access", new(HandleAccess))
 	t.Run()
 }

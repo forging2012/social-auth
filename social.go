@@ -209,7 +209,8 @@ func (this *SocialAuth) OAuthAccess(ctx *tango.Context, session *session.Session
 		if ok, err := p.CanConnect(tok, &uSocial); ok {
 			// save token to session, for connect
 			tk := SocialTokenField{tok}
-			session.Set(this.getSessKey(social, "token"), tk.RawValue())
+			data, _ := tk.ToDB()
+			session.Set(this.getSessKey(social, "token"), data)
 			session.Set("social_connect", int(social))
 
 			redirect = this.ConnectRegisterURL
@@ -273,8 +274,8 @@ func (this *SocialAuth) ConnectAndLogin(ctx *tango.Context, session *session.Ses
 	}()
 
 	tk := SocialTokenField{}
-	value := session.Get(tokKey)
-	if err := tk.SetRaw(value); err != nil {
+	value := session.Get(tokKey).([]byte)
+	if err := tk.FromDB(value); err != nil {
 		return "", nil, err
 	}
 
@@ -327,16 +328,21 @@ func NewSocial(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
 	social.LoginURL = defaultLoginURL
 	social.ConnectRegisterURL = defaultConnectRegisterURL
 
-	return social
-}
-
-// create a instance and create filter
-func NewWithFilter(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
-	social := NewSocial(urlPrefix, socialAuther)
-
-	// TODO: use tango middlware instead beego filter
-	//beego.InsertFilter(social.URLPrefix+"*/access", beego.BeforeRouter, social.handleAccess)
-	//beego.InsertFilter(social.URLPrefix+"*", beego.BeforeRouter, social.handleRedirect)
+	err := orm.Sync2(new(UserSocial))
+	if err != nil {
+		panic(err)
+	}
 
 	return social
 }
+
+// // create a instance and create filter
+// func NewWithFilter(urlPrefix string, socialAuther SocialAuther) *SocialAuth {
+// 	social := NewSocial(urlPrefix, socialAuther)
+
+// 	// TODO: use tango middlware instead beego filter
+// 	//beego.InsertFilter(social.URLPrefix+"*/access", beego.BeforeRouter, social.handleAccess)
+// 	//beego.InsertFilter(social.URLPrefix+"*", beego.BeforeRouter, social.handleRedirect)
+
+// 	return social
+// }
